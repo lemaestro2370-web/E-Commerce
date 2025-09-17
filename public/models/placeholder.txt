@@ -1,0 +1,22 @@
+# 3D Models Directory
+
+This directory contains 3D models in GLB format for products.
+
+## Demo Models Available:
+- smartphone.glb (placeholder)
+- laptop.glb (placeholder)
+- etc.
+
+## Model Requirements:
+- Format: GLB (preferred) or GLTF
+- Compression: Draco compressed recommended
+- Size: Keep under 5MB per model
+- Textures: Embedded or in same directory
+
+## Free Model Sources:
+- Sketchfab (Creative Commons)
+- Google Poly Archive
+- Blend Swap
+- TurboSquid Free Section
+
+Note: Current demo uses geometric placeholders. Replace with actual GLB models for production.
