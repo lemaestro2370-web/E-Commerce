@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Gift, Star, Zap, Heart, Sparkles, X } from 'lucide-react';
+import React from 'react';
+import { Gift, Sparkles, X } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { useStore } from '../../store/useStore';
 
@@ -9,175 +9,76 @@ interface SurpriseModalProps {
 }
 
 export function SurpriseModal({ isOpen, onClose }: SurpriseModalProps) {
-  const { user, language } = useStore();
-  const [currentSurprise, setCurrentSurprise] = useState(0);
-  const [isAnimating, setIsAnimating] = useState(false);
+  const { language } = useStore();
 
   const translations = {
     en: {
-      welcome: 'Welcome Back!',
+      surprise: 'Surprise!',
       dailyBonus: 'Daily Login Bonus',
-      congratulations: 'Congratulations!',
-      youEarned: 'You earned',
-      points: 'points',
-      loyaltyLevel: 'Loyalty Level',
-      keepShopping: 'Keep shopping to unlock more rewards!',
+      message: 'Welcome back! You\'ve earned 50 loyalty points just for logging in today.',
+      points: 'Points Earned',
       awesome: 'Awesome!',
-      close: 'Continue Shopping',
-      surprises: [
-        {
-          title: 'Daily Login Bonus!',
-          description: 'Thanks for coming back! Here are your daily points.',
-          points: 50,
-          icon: 'star'
-        },
-        {
-          title: 'Surprise Gift!',
-          description: 'A special surprise just for you!',
-          points: 100,
-          icon: 'gift'
-        },
-        {
-          title: 'Lightning Bonus!',
-          description: 'You\'re on fire! Extra points for being awesome.',
-          points: 75,
-          icon: 'zap'
-        }
-      ]
+      keepItUp: 'Keep logging in daily to earn more rewards!',
+      close: 'Close'
     },
     fr: {
-      welcome: 'Bon Retour!',
+      surprise: 'Surprise!',
       dailyBonus: 'Bonus de Connexion Quotidien',
-      congratulations: 'Félicitations!',
-      youEarned: 'Vous avez gagné',
-      points: 'points',
-      loyaltyLevel: 'Niveau de Fidélité',
-      keepShopping: 'Continuez vos achats pour débloquer plus de récompenses!',
+      message: 'Bon retour! Vous avez gagné 50 points de fidélité juste en vous connectant aujourd\'hui.',
+      points: 'Points Gagnés',
       awesome: 'Fantastique!',
-      close: 'Continuer les Achats',
-      surprises: [
-        {
-          title: 'Bonus de Connexion Quotidien!',
-          description: 'Merci d\'être revenu! Voici vos points quotidiens.',
-          points: 50,
-          icon: 'star'
-        },
-        {
-          title: 'Cadeau Surprise!',
-          description: 'Une surprise spéciale juste pour vous!',
-          points: 100,
-          icon: 'gift'
-        },
-        {
-          title: 'Bonus Éclair!',
-          description: 'Vous êtes en feu! Points supplémentaires pour être génial.',
-          points: 75,
-          icon: 'zap'
-        }
-      ]
+      keepItUp: 'Continuez à vous connecter quotidiennement pour gagner plus de récompenses!',
+      close: 'Fermer'
     }
   };
 
   const t = translations[language];
-  const surprise = t.surprises[currentSurprise];
-
-  useEffect(() => {
-    if (isOpen) {
-      setIsAnimating(true);
-      // Randomly select a surprise
-      setCurrentSurprise(Math.floor(Math.random() * t.surprises.length));
-    }
-  }, [isOpen, t.surprises.length]);
-
-  const getIcon = (iconType: string) => {
-    switch (iconType) {
-      case 'star':
-        return <Star className="w-12 h-12 text-yellow-400 fill-current" />;
-      case 'gift':
-        return <Gift className="w-12 h-12 text-purple-400" />;
-      case 'zap':
-        return <Zap className="w-12 h-12 text-blue-400" />;
-      default:
-        return <Heart className="w-12 h-12 text-red-400 fill-current" />;
-    }
-  };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex min-h-full items-center justify-center p-4">
-        {/* Backdrop */}
-        <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 relative overflow-hidden">
+        {/* Background decoration */}
+        <div className="absolute inset-0 bg-gradient-to-br from-yellow-100 via-pink-100 to-purple-100 opacity-50"></div>
         
-        {/* Modal */}
-        <div className={`
-          relative bg-gradient-to-br from-green-400 via-green-500 to-green-600 rounded-2xl p-8 shadow-2xl max-w-md w-full text-white text-center
-          transform transition-all duration-500 ease-out
-          ${isAnimating ? 'scale-100 opacity-100' : 'scale-75 opacity-0'}
-        `}>
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
-
-          {/* Floating sparkles */}
-          <div className="absolute inset-0 overflow-hidden rounded-2xl">
-            {[...Array(6)].map((_, i) => (
-              <Sparkles
-                key={i}
-                className={`absolute w-4 h-4 text-yellow-300 animate-ping`}
-                style={{
-                  top: `${Math.random() * 80 + 10}%`,
-                  left: `${Math.random() * 80 + 10}%`,
-                  animationDelay: `${Math.random() * 2}s`,
-                  animationDuration: `${2 + Math.random() * 2}s`
-                }}
-              />
-            ))}
+        <div className="relative z-10">
+          {/* Header */}
+          <div className="text-center mb-6">
+            <div className="flex items-center justify-center mb-4">
+              <div className="p-4 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full animate-bounce">
+                <Gift className="w-8 h-8 text-white" />
+              </div>
+            </div>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">{t.surprise}</h2>
+            <h3 className="text-xl font-semibold text-blue-600">{t.dailyBonus}</h3>
           </div>
 
           {/* Content */}
-          <div className="relative z-10">
-            <div className="mb-6">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-white bg-opacity-20 rounded-full mb-4 animate-bounce">
-                {getIcon(surprise.icon)}
-              </div>
-              
-              <h2 className="text-3xl font-bold mb-2">{t.congratulations}</h2>
-              <h3 className="text-xl font-semibold mb-4">{surprise.title}</h3>
-              <p className="text-lg opacity-90 mb-6">{surprise.description}</p>
-            </div>
-
-            {/* Points display */}
-            <div className="bg-white bg-opacity-20 rounded-xl p-6 mb-6 backdrop-blur-sm">
-              <div className="text-4xl font-bold mb-2">+{surprise.points}</div>
-              <div className="text-lg">{t.points}</div>
-            </div>
-
-            {/* User info */}
-            {user && (
-              <div className="bg-white bg-opacity-10 rounded-lg p-4 mb-6">
-                <div className="text-sm opacity-75 mb-1">{t.loyaltyLevel}</div>
-                <div className="text-lg font-semibold">
-                  {user.level || 'Bronze'} Member
+          <div className="text-center mb-8">
+            <p className="text-gray-700 mb-6">{t.message}</p>
+            
+            <div className="bg-gradient-to-r from-green-100 to-blue-100 rounded-lg p-6 mb-6">
+              <div className="flex items-center justify-center space-x-3">
+                <Sparkles className="w-6 h-6 text-yellow-500" />
+                <div>
+                  <p className="text-sm text-gray-600">{t.points}</p>
+                  <p className="text-3xl font-bold text-green-600">+50</p>
                 </div>
-                <div className="text-sm opacity-75">
-                  {user.loyalty_points || 0} total points
-                </div>
+                <Sparkles className="w-6 h-6 text-yellow-500" />
               </div>
-            )}
+            </div>
+            
+            <p className="text-sm text-gray-600">{t.keepItUp}</p>
+          </div>
 
-            <p className="text-sm opacity-75 mb-6">{t.keepShopping}</p>
-
+          {/* Actions */}
+          <div className="text-center">
             <Button
               onClick={onClose}
-              className="bg-white text-green-600 hover:bg-gray-100 font-bold py-3 px-8 rounded-lg shadow-lg transform hover:scale-105 transition-all duration-200"
+              className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white px-8 py-3 rounded-xl font-semibold"
             >
-              {t.awesome}! {t.close}
+              {t.awesome}!
             </Button>
           </div>
         </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Gift, RotateCcw, Star, Trophy, Heart, Zap, Crown, Sparkles } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { useStore } from '../../store/useStore';
+import { db } from '../../lib/supabase';
 
 interface SpinningWheelProps {
   onClose?: () => void;
@@ -82,7 +83,7 @@ const prizes: Prize[] = [
 ];
 
 export const SpinningWheel: React.FC<SpinningWheelProps> = ({ onClose }) => {
-  const { user, language } = useStore();
+  const { user, language, addReward, setUser } = useStore();
   const [isSpinning, setIsSpinning] = useState(false);
   const [hasSpunToday, setHasSpunToday] = useState(false);
   const [lastSpinDate, setLastSpinDate] = useState<string | null>(null);
@@ -172,10 +173,60 @@ export const SpinningWheel: React.FC<SpinningWheelProps> = ({ onClose }) => {
     setRotation(prev => prev + finalRotation);
 
     // Show result after animation
-    setTimeout(() => {
+    setTimeout(async () => {
       setWonPrize(selectedPrize);
       setShowResult(true);
       setIsSpinning(false);
+      
+      // Add reward to user's account
+      if (selectedPrize.type !== 'nothing' && user) {
+        // Map prize type to allowed UserReward.type
+        let rewardType: "daily_login" | "first_purchase" | "loyalty_points" | "surprise_gift" | "achievement";
+        if (selectedPrize.type === "points") {
+          rewardType = "loyalty_points";
+        } else if (selectedPrize.type === "discount" || selectedPrize.type === "gift") {
+          rewardType = "surprise_gift";
+        } else {
+          rewardType = "achievement"; // fallback, not used for 'nothing'
+        }
+
+        const reward = {
+          id: crypto.randomUUID(),
+          user_id: user.id,
+          type: rewardType,
+          title: `Spin Wheel: ${language === 'en' ? selectedPrize.name : selectedPrize.name_fr}`,
+          description: `You won ${selectedPrize.value} ${selectedPrize.type} from the daily spin wheel!`,
+          points: selectedPrize.type === 'points' ? selectedPrize.value : 0,
+          claimed: false,
+          created_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days
+        };
+
+        addReward(reward);
+        
+        // Update user's loyalty points if it's a points reward
+        if (selectedPrize.type === 'points' && user) {
+          const updatedUser = {
+            ...user,
+            loyalty_points: (user.loyalty_points || 0) + selectedPrize.value
+          };
+          setUser(updatedUser);
+        }
+        
+        // Try to save to database
+        try {
+          await db.createReward(reward);
+          
+          // Update user points in database
+          if (selectedPrize.type === 'points') {
+            await db.updateProfile(user.id, {
+              loyalty_points: (user.loyalty_points || 0) + selectedPrize.value
+            });
+          }
+        } catch (error) {
+          console.warn('Could not save reward to database:', error);
+        }
+      }
       
       // Mark as spun today
       const today = new Date().toDateString();
@@ -199,29 +250,35 @@ export const SpinningWheel: React.FC<SpinningWheelProps> = ({ onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 relative overflow-hidden">
+      <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-lg w-full mx-4 relative overflow-hidden">
         {/* Background decoration */}
-        <div className="absolute inset-0 bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100 opacity-50"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-100 via-pink-100 to-yellow-100 opacity-60"></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-transparent"></div>
         
         <div className="relative z-10">
           {/* Header */}
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
-              <div className="p-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full">
-                <Sparkles className="w-8 h-8 text-white" />
+              <div className="p-4 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full shadow-lg animate-bounce">
+                <Sparkles className="w-10 h-10 text-white" />
               </div>
             </div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">{currentT.title}</h2>
-            <p className="text-gray-600">{currentT.subtitle}</p>
+            <h2 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-3">
+              {currentT.title}
+            </h2>
+            <p className="text-lg text-gray-700 font-medium">{currentT.subtitle}</p>
           </div>
 
           {/* Wheel */}
           <div className="relative mb-8">
-            <div className="w-64 h-64 mx-auto relative">
+            <div className="w-96 h-96 mx-auto relative">
               {/* Wheel */}
               <div 
-                className="w-full h-full rounded-full border-8 border-gray-200 relative overflow-hidden transition-transform duration-3000 ease-out"
-                style={{ transform: `rotate(${rotation}deg)` }}
+                className="w-full h-full rounded-full border-8 border-yellow-400 relative overflow-hidden shadow-2xl transition-transform duration-3000 ease-out"
+                style={{ 
+                  transform: `rotate(${rotation}deg)`,
+                  transition: isSpinning ? 'transform 3s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none'
+                }}
               >
                 {prizes.map((prize, index) => {
                   const angle = (360 / prizes.length) * index;
@@ -233,25 +290,27 @@ export const SpinningWheel: React.FC<SpinningWheelProps> = ({ onClose }) => {
                       key={prize.id}
                       className="absolute inset-0"
                       style={{
-                        transform: `rotate(${angle}deg)`,
-                        transformOrigin: 'center'
+                        transform: `rotate(${angle}deg)`
                       }}
                     >
                       <div
-                        className={`w-full h-full bg-gradient-to-r ${prize.color} flex items-center justify-center`}
+                        className={`absolute inset-0 bg-gradient-to-r ${prize.color}`}
                         style={{
-                          clipPath: `polygon(50% 50%, 50% 0%, ${50 + 50 * Math.cos((nextAngle - angle) * Math.PI / 180)}% ${50 - 50 * Math.sin((nextAngle - angle) * Math.PI / 180)}%)`
+                          clipPath: `polygon(50% 50%, 50% 0%, ${50 + 50 * Math.cos((360 / prizes.length) * Math.PI / 180)}% ${50 - 50 * Math.sin((360 / prizes.length) * Math.PI / 180)}%)`
                         }}
                       >
-                        <div 
-                          className="text-white text-center transform -rotate-90 origin-center"
-                          style={{ transform: `rotate(${midAngle}deg)` }}
+                        <div
+                          className="absolute inset-0 flex items-center justify-center text-white font-bold text-sm"
+                          style={{
+                            transform: `rotate(${(360 / prizes.length) / 2}deg)`,
+                            transformOrigin: '50% 50%'
+                          }}
                         >
-                          <div className="flex flex-col items-center">
+                          <div className="text-center">
                             {prize.icon}
-                            <span className="text-xs font-semibold mt-1">
+                            <div className="text-xs mt-1">
                               {language === 'en' ? prize.name : prize.name_fr}
-                            </span>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -261,8 +320,13 @@ export const SpinningWheel: React.FC<SpinningWheelProps> = ({ onClose }) => {
               </div>
               
               {/* Pointer */}
-              <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-2">
-                <div className="w-0 h-0 border-l-4 border-r-4 border-b-8 border-l-transparent border-r-transparent border-b-red-500"></div>
+              <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-4 z-10">
+                <div className="w-0 h-0 border-l-6 border-r-6 border-b-12 border-l-transparent border-r-transparent border-b-red-600 drop-shadow-lg"></div>
+              </div>
+              
+              {/* Center Circle */}
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-20 h-20 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full border-4 border-white shadow-2xl flex items-center justify-center z-10">
+                <Sparkles className="w-10 h-10 text-white animate-pulse" />
               </div>
             </div>
           </div>
@@ -280,20 +344,22 @@ export const SpinningWheel: React.FC<SpinningWheelProps> = ({ onClose }) => {
           {/* Result */}
           {showResult && wonPrize && (
             <div className="text-center mb-6">
-              <div className="p-6 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-xl">
-                <div className="text-4xl mb-2">🎉</div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">{currentT.congratulations}</h3>
-                <p className="text-gray-700 mb-4">{currentT.youWon}</p>
+              <div className="p-8 bg-gradient-to-r from-green-50 via-blue-50 to-purple-50 border-2 border-green-300 rounded-2xl shadow-inner">
+                <div className="text-6xl mb-4 animate-bounce">🎉</div>
+                <h3 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent mb-3">
+                  {currentT.congratulations}
+                </h3>
+                <p className="text-lg text-gray-700 mb-6 font-medium">{currentT.youWon}</p>
                 <div className="flex items-center justify-center space-x-3 mb-4">
-                  <div className={`p-3 rounded-full bg-gradient-to-r ${wonPrize.color}`}>
+                  <div className={`p-4 rounded-full bg-gradient-to-r ${wonPrize.color} shadow-lg animate-pulse`}>
                     {wonPrize.icon}
                   </div>
                   <div className="text-left">
-                    <p className="text-xl font-bold text-gray-900">
+                    <p className="text-2xl font-bold text-gray-900">
                       {language === 'en' ? wonPrize.name : wonPrize.name_fr}
                     </p>
                     {wonPrize.type !== 'nothing' && (
-                      <p className="text-gray-600">
+                      <p className="text-lg text-gray-600 font-medium">
                         {wonPrize.type === 'discount' && `${wonPrize.value}% ${currentT.discount}`}
                         {wonPrize.type === 'points' && `${wonPrize.value} ${currentT.points}`}
                         {wonPrize.type === 'gift' && currentT.freeGift}
@@ -310,7 +376,7 @@ export const SpinningWheel: React.FC<SpinningWheelProps> = ({ onClose }) => {
             <Button
               onClick={handleClose}
               variant="ghost"
-              className="flex-1"
+              className="flex-1 border-2 border-gray-300 hover:border-gray-400 font-semibold"
             >
               {currentT.close}
             </Button>
@@ -319,7 +385,7 @@ export const SpinningWheel: React.FC<SpinningWheelProps> = ({ onClose }) => {
               <Button
                 onClick={handleSpinAgain}
                 variant="ghost"
-                className="flex-1"
+                className="flex-1 border-2 border-purple-300 hover:border-purple-400 text-purple-600 font-semibold"
               >
                 {currentT.spinAgain}
               </Button>
@@ -327,17 +393,17 @@ export const SpinningWheel: React.FC<SpinningWheelProps> = ({ onClose }) => {
               <Button
                 onClick={handleSpin}
                 disabled={hasSpunToday || isSpinning}
-                className={`flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 ${
+                className={`flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 ${
                   isSpinning ? 'animate-pulse' : ''
                 }`}
               >
                 {isSpinning ? (
                   <div className="flex items-center space-x-2">
-                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div>
-                    <span>Spinning...</span>
+                    <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
+                    <span className="text-lg">Spinning...</span>
                   </div>
                 ) : (
-                  currentT.spinButton
+                  <span className="text-lg">{currentT.spinButton}</span>
                 )}
               </Button>
             )}

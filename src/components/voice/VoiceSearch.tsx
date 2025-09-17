@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Volume2, Search, X, Loader2 } from 'lucide-react';
+import { Mic, MicOff, Search, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { useStore } from '../../store/useStore';
 import { db } from '../../lib/supabase';
@@ -10,7 +10,6 @@ interface VoiceSearchProps {
   onListeningChange?: (isListening: boolean) => void;
   onClose?: () => void;
   placeholder?: string;
-  className?: string;
 }
 
 interface SpeechRecognitionEvent extends Event {
@@ -36,7 +35,6 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
   onListeningChange,
   onClose,
   placeholder = "Say something to search...",
-  className = ""
 }) => {
   const { language, user } = useStore();
   const [isListening, setIsListening] = useState(false);
@@ -45,8 +43,8 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
   const [error, setError] = useState('');
   const [isSupported, setIsSupported] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState('');
   const recognitionRef = useRef<any>(null);
-  const sessionId = useRef(crypto.randomUUID());
 
   const translations = {
     en: {
@@ -57,6 +55,7 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
       speak: 'Speak now',
       tryAgain: 'Try Again',
       search: 'Search',
+      example: 'Try saying: "Show me skincare products" or "Find red dresses"',
       clear: 'Clear',
       notSupported: 'Voice search not supported in this browser',
       permissionDenied: 'Microphone permission denied',
@@ -65,6 +64,7 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
       confidence: 'Confidence',
       transcript: 'What you said',
       searchFor: 'Search for',
+      voiceSearch: 'Voice Search',
     },
     fr: {
       startListening: 'Démarrer la Recherche Vocale',
@@ -74,6 +74,7 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
       speak: 'Parlez maintenant',
       tryAgain: 'Réessayer',
       search: 'Rechercher',
+      example: 'Essayez de dire: "Montrez-moi des produits de soin" ou "Trouvez des robes rouges"',
       clear: 'Effacer',
       notSupported: 'Recherche vocale non supportée dans ce navigateur',
       permissionDenied: 'Permission du microphone refusée',
@@ -82,16 +83,31 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
       confidence: 'Confiance',
       transcript: 'Ce que vous avez dit',
       searchFor: 'Rechercher',
+      voiceSearch: 'Recherche Vocale',
     }
   };
 
   const t = translations[language];
 
   useEffect(() => {
-    // Check if speech recognition is supported
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
-    if (SpeechRecognition) {
+    initializeSpeechRecognition();
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, [language]);
+  
+  const initializeSpeechRecognition = () => {
+    try {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      
+      if (!SpeechRecognition) {
+        setIsSupported(false);
+        setError(t.notSupported);
+        return;
+      }
+
       setIsSupported(true);
       recognitionRef.current = new SpeechRecognition();
       
@@ -100,19 +116,20 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
       recognitionRef.current.interimResults = true;
       recognitionRef.current.lang = language === 'fr' ? 'fr-FR' : 'en-US';
       recognitionRef.current.maxAlternatives = 1;
-
+      
       // Event handlers
       recognitionRef.current.onstart = () => {
         setIsListening(true);
         setError('');
         setTranscript('');
+        setInterimTranscript('');
         setConfidence(0);
         onListeningChange?.(true);
       };
 
       recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
         let finalTranscript = '';
-        let interimTranscript = '';
+        let currentInterim = '';
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
@@ -120,24 +137,24 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
             finalTranscript += result[0].transcript;
             setConfidence(result[0].confidence);
           } else {
-            interimTranscript += result[0].transcript;
+            currentInterim += result[0].transcript;
           }
         }
 
-        const currentTranscript = finalTranscript || interimTranscript;
+        const currentTranscript = finalTranscript || currentInterim;
         setTranscript(currentTranscript);
+        setInterimTranscript(currentInterim);
         
-        // Call onTranscript callback for real-time updates
-        if (currentTranscript && onTranscript) {
+        if (finalTranscript) {
+          handleSearchResult(finalTranscript, event.results[event.resultIndex][0].confidence || 0);
+        }
+        
+        // Call transcript callback
+        if (onTranscript) {
           onTranscript(currentTranscript);
         }
       };
 
-      recognitionRef.current.onend = () => {
-        setIsListening(false);
-        setIsProcessing(false);
-        onListeningChange?.(false);
-      };
 
       recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
         setIsListening(false);
@@ -154,34 +171,82 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
           case 'network':
             setError(t.networkError);
             break;
+          case 'audio-capture':
+            setError('Microphone not available. Please check your microphone settings.');
+            break;
+          case 'not-allowed':
+            setError('Microphone access denied. Please allow microphone access and try again.');
+            break;
           default:
-            setError(`Error: ${event.error}`);
+            setError(`Speech recognition error: ${event.error}`);
         }
       };
-    } else {
+      
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+        setIsProcessing(false);
+        onListeningChange?.(false);
+      };
+      
+    } catch (error) {
+      console.error('Error initializing speech recognition:', error);
       setIsSupported(false);
       setError(t.notSupported);
     }
+  };
 
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
+  const handleSearchResult = async (searchQuery: string, confidence: number) => {
+    setIsProcessing(true);
+    
+    try {
+      // Process voice commands
+      const processedQuery = processVoiceCommands(searchQuery);
+      
+      // Log voice search for analytics
+      if (user) {
+        try {
+          await db.logVoiceSearch({
+            user_id: user.id,
+            search_query: processedQuery,
+            transcription_confidence: confidence,
+            session_id: crypto.randomUUID()
+          });
+        } catch (logError) {
+          console.warn('Could not log voice search:', logError);
+        }
       }
-    };
-  }, [language, t]);
+      
+      // Perform the search
+      if (onSearch) {
+        onSearch(processedQuery);
+      }
+      
+      // Close the voice search modal after successful search
+      setTimeout(() => {
+        if (onClose) onClose();
+      }, 1000);
+      
+    } catch (error) {
+      console.error('Error processing voice search:', error);
+      setError('Failed to process search. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const startListening = () => {
     if (!isSupported || !recognitionRef.current) return;
     
     setError('');
     setTranscript('');
+    setInterimTranscript('');
     setConfidence(0);
     
     try {
       recognitionRef.current.start();
     } catch (error) {
-      console.error('Error starting speech recognition:', error);
-      setError('Failed to start voice recognition');
+      console.error('Error starting recognition:', error);
+      setError('Failed to start voice recognition. Please try again.');
     }
   };
 
@@ -193,41 +258,7 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
 
   const handleSearch = async () => {
     if (!transcript.trim()) return;
-    
-    setIsProcessing(true);
-    
-    try {
-      // Process voice commands
-      const processedQuery = processVoiceCommands(transcript.trim());
-      
-      // Log voice search for analytics
-      if (user) {
-        await db.logVoiceSearch({
-          user_id: user.id,
-          search_query: transcript,
-          transcription_confidence: confidence,
-          session_id: sessionId.current
-        });
-      }
-      
-      // Call both callbacks if provided
-      onSearch?.(processedQuery);
-      onTranscript?.(processedQuery);
-      
-      // Clear transcript after search
-      setTimeout(() => {
-        setTranscript('');
-        setConfidence(0);
-      }, 1000);
-      
-    } catch (error) {
-      console.error('Error logging voice search:', error);
-      // Still perform search even if logging fails
-      onSearch?.(transcript.trim());
-      onTranscript?.(transcript.trim());
-    } finally {
-      setIsProcessing(false);
-    }
+    handleSearchResult(transcript.trim(), confidence);
   };
 
   const processVoiceCommands = (query: string): string => {
@@ -318,6 +349,7 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
 
   const clearTranscript = () => {
     setTranscript('');
+    setInterimTranscript('');
     setConfidence(0);
     setError('');
   };
@@ -334,23 +366,24 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
 
   if (!isSupported) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-        <div className="flex items-center space-x-2 text-red-700">
-          <MicOff className="w-5 h-5" />
-          <span className="text-sm font-medium">{t.notSupported}</span>
+      <div className="bg-white rounded-lg shadow-lg border p-6 max-w-md mx-auto">
+        <div className="text-center">
+          <MicOff className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Voice Search</h3>
+          <p className="text-gray-600">{t.notSupported}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`bg-white rounded-lg shadow-lg border p-6 max-w-md mx-auto ${className}`}>
+    <div className="bg-white rounded-2xl shadow-2xl border-2 border-gray-200 p-8 max-w-lg mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Voice Search</h3>
+        <h3 className="text-2xl font-bold text-gray-900">🎤 Voice Search</h3>
         {onClose && (
           <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="w-4 h-4" />
+            ✕
           </Button>
         )}
       </div>
@@ -358,31 +391,34 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
       {/* Voice Input Area */}
       <div className="text-center mb-6">
         <div className={`
-          w-24 h-24 mx-auto mb-4 rounded-full flex items-center justify-center transition-all duration-300
+          w-32 h-32 mx-auto mb-6 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl
           ${isListening 
-            ? 'bg-red-100 border-4 border-red-300 animate-pulse' 
-            : 'bg-blue-100 border-4 border-blue-300 hover:bg-blue-200'
+            ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 animate-pulse' 
+            : isProcessing
+            ? 'bg-gradient-to-r from-yellow-500 to-orange-500'
+            : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'
           }
+          text-white hover:shadow-2xl transform hover:scale-110
         `}>
           <Button
             variant="ghost"
             size="lg"
             onClick={isListening ? stopListening : startListening}
             disabled={isProcessing}
-            className="w-full h-full rounded-full p-0"
+            className="w-full h-full rounded-full p-0 text-white hover:bg-transparent"
           >
             {isProcessing ? (
-              <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+              <Loader2 className="w-10 h-10 animate-spin" />
             ) : isListening ? (
-              <MicOff className="w-8 h-8 text-red-600" />
+              <MicOff className="w-10 h-10" />
             ) : (
-              <Mic className="w-8 h-8 text-blue-600" />
+              <Mic className="w-10 h-10" />
             )}
           </Button>
         </div>
 
-        <p className="text-sm text-gray-600 mb-2">
-          {isListening ? t.listening : isProcessing ? t.processing : t.speak}
+        <p className="text-lg font-semibold text-gray-700 mb-4">
+          {isProcessing ? t.processing : isListening ? t.listening : t.speak}
         </p>
 
         {isListening && (
@@ -390,7 +426,7 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
             {[...Array(3)].map((_, i) => (
               <div
                 key={i}
-                className="w-1 h-4 bg-red-500 rounded-full animate-pulse"
+                className="w-2 h-6 bg-red-500 rounded-full animate-pulse"
                 style={{ animationDelay: `${i * 0.2}s` }}
               />
             ))}
@@ -399,36 +435,38 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
       </div>
 
       {/* Transcript Display */}
-      {transcript && (
-        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-700">{t.transcript}:</span>
-            {confidence > 0 && (
-              <span className="text-xs text-gray-500">
-                {t.confidence}: {Math.round(confidence * 100)}%
-              </span>
-            )}
-          </div>
-          <p className="text-gray-900">{transcript}</p>
+      {(transcript || interimTranscript) && (
+        <div className="mb-6 p-6 bg-white rounded-2xl shadow-inner border-2 border-gray-100">
+          <p className="text-sm font-semibold text-gray-600 mb-3">{t.searchFor}:</p>
+          <p className="font-bold text-lg text-gray-900 mb-3">{transcript || interimTranscript}</p>
           
-          <div className="flex items-center space-x-2 mt-2">
+          <div className="mt-4">
+            <p className="text-sm text-gray-600 mb-2">{t.confidence}: {Math.round(confidence * 100)}%</p>
+            <div className="w-full bg-gray-200 rounded-full h-3">
+              <div 
+                className="bg-gradient-to-r from-green-400 to-blue-500 h-3 rounded-full transition-all duration-500"
+                style={{ width: `${confidence * 100}%` }}
+              ></div>
+            </div>
+          </div>
+          
+          <div className="flex space-x-2 mt-4">
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => speakText(transcript)}
-              className="text-blue-600"
+              onClick={() => speakText(transcript || interimTranscript)}
+              className="flex items-center space-x-1"
             >
-              <Volume2 className="w-4 h-4 mr-1" />
-              Play
+              <Volume2 className="w-4 h-4" />
+              <span>Play</span>
             </Button>
             <Button
               variant="ghost"
               size="sm"
               onClick={clearTranscript}
-              className="text-gray-600"
+              className="flex items-center space-x-1"
             >
-              <X className="w-4 h-4 mr-1" />
-              {t.clear}
+              <span>Clear</span>
             </Button>
           </div>
         </div>
@@ -436,13 +474,13 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
 
       {/* Error Display */}
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-sm text-red-700">{error}</p>
+        <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 rounded-2xl">
+          <p className="text-red-700 font-medium">{error}</p>
           <Button
             variant="ghost"
             size="sm"
             onClick={startListening}
-            className="mt-2 text-red-600"
+            className="mt-2 text-red-600 hover:bg-red-100"
           >
             {t.tryAgain}
           </Button>
@@ -450,34 +488,39 @@ export const VoiceSearch: React.FC<VoiceSearchProps> = ({
       )}
 
       {/* Action Buttons */}
-      <div className="flex space-x-2">
+      <div className="flex space-x-4">
         <Button
-          variant="primary"
-          onClick={handleSearch}
-          disabled={!transcript.trim() || isProcessing}
-          className="flex-1"
+          variant="ghost"
+          onClick={onClose}
+          disabled={isProcessing}
+          className="flex-1 border-2 border-gray-300 hover:border-gray-400"
         >
-          <Search className="w-4 h-4 mr-2" />
-          {t.search}
+          Close
         </Button>
         
         <Button
-          variant="ghost"
-          onClick={isListening ? stopListening : startListening}
-          disabled={isProcessing}
+          onClick={handleSearch}
+          disabled={!transcript.trim() || isProcessing}
+          className="flex-1 bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 text-white font-bold"
         >
-          {isListening ? (
-            <MicOff className="w-4 h-4" />
+          {isProcessing ? (
+            <div className="flex items-center justify-center">
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              {t.processing}
+            </div>
           ) : (
-            <Mic className="w-4 h-4" />
+            <div className="flex items-center justify-center">
+              <Search className="w-4 h-4 mr-2" />
+              {t.search}
+            </div>
           )}
         </Button>
       </div>
 
-      {/* Instructions */}
-      <div className="mt-4 text-xs text-gray-500 text-center">
-        <p>Click the microphone and speak clearly.</p>
-        <p>Supported languages: English, French</p>
+      {/* Help Text */}
+      <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl border border-blue-200">
+        <h4 className="font-semibold text-blue-800 mb-2">💡 Tips</h4>
+        <p className="text-blue-700 text-sm">{t.example}</p>
       </div>
     </div>
   );

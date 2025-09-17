@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { Header } from './components/ui/Header';
 import { Modal } from './components/ui/Modal';
+import { ChatSystem } from './components/chat/ChatSystem';
 import { useStore } from './store/useStore';
 import { auth, db } from './lib/supabase';
 import { LoadingScreen } from './components/ui/LoadingScreen';
@@ -37,6 +38,7 @@ function App() {
   const [showCart, setShowCart] = useState(false);
   const [showSurprise, setShowSurprise] = useState(false);
   const [showSpinningWheel, setShowSpinningWheel] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   const [hasSpunToday, setHasSpunToday] = useState(false);
 
   useEffect(() => {
@@ -188,13 +190,27 @@ function App() {
     return (
       <Router>
         <div className="min-h-screen bg-gray-50">
-          <Header
-            onCartClick={() => setShowCart(true)}
-            onAuthClick={handleAuthClick}
-          />
           <Suspense fallback={<LoadingScreen />}>
             <AdminPage />
           </Suspense>
+          
+          {/* Chat System for Admin */}
+          {showChat && (
+            <ChatSystem onClose={() => setShowChat(false)} />
+          )}
+
+          {/* Floating Chat Button for Admin */}
+          {!showChat && (
+            <div className="fixed bottom-4 right-4 z-40">
+              <button
+                onClick={() => setShowChat(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-lg hover:shadow-xl transform hover:scale-110 transition-all duration-200"
+                title="Admin Chat"
+              >
+                💬
+              </button>
+            </div>
+          )}
         </div>
       </Router>
     );
@@ -220,6 +236,24 @@ function App() {
               </Routes>
             </Suspense>
           </main>
+
+          {/* Chat System */}
+          {showChat && (
+            <ChatSystem onClose={() => setShowChat(false)} />
+          )}
+
+          {/* Floating Chat Button */}
+          {!showChat && (
+            <div className="fixed bottom-20 right-4 z-40">
+              <button
+                onClick={() => setShowChat(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-lg hover:shadow-xl transform hover:scale-110 transition-all duration-200"
+                title="Chat with Support"
+              >
+                💬
+              </button>
+            </div>
+          )}
 
           {/* Reward Notifications */}
           {getUnclaimedRewards().map(reward => (
